@@ -20,7 +20,8 @@ namespace YoloDotNet.Models
         public byte[]? OnnxModelBytes { get; set; }
 
         /// <summary>
-        /// Gets or sets Execution Provider (CPU, CUDA or TensorRT).
+        /// Gets or sets Execution Provider (CPU, CUDA or TensorRT, DML).
+        /// CPU is the default provider.
         /// </summary>
         public IExecutionProvider ExecutionProvider { get; set; } = new CpuExecutionProvider();
 
