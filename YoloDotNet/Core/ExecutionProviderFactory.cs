@@ -27,11 +27,20 @@ namespace YoloDotNet.Core
                 case TensorRtExecutionProvider trtProvider:
                     ConfigureTensorRT(trtProvider, options);
                     break;
+
+                case DmlExecutionProvider:
+                    ConfigureDml(options);
+                    break;
                 default:
                     throw new YoloDotNetUnsupportedProviderException($"Unknown execution provider: {config.GetType().Name}");
             }
 
             return options;
+        }
+
+        private static void ConfigureDml(SessionOptions options)
+        {
+            options.AppendExecutionProvider_DML();
         }
 
         private static void ConfigureCpu(SessionOptions options)
@@ -78,7 +87,7 @@ namespace YoloDotNet.Core
             {
                 cacheEnabled = 0;
             }
-            
+
             var tensorOptions = new OrtTensorRTProviderOptions();
 
             var providerOptions = new Dictionary<string, string>
@@ -123,7 +132,7 @@ namespace YoloDotNet.Core
                 // WARNING: levels below 3 do not guarantee good engine performance, but greatly improve
                 // build time. Default 3, valid range[0 - 5].
             };
-            
+
             switch (provider.Precision)
             {
                 case TrtPrecision.FP16:
@@ -173,7 +182,7 @@ namespace YoloDotNet.Core
 
                     break;
             }
-            
+
             tensorOptions.UpdateOptions(providerOptions);
             options.AppendExecutionProvider_Tensorrt(tensorOptions);
         }

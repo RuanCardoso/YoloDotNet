@@ -66,6 +66,7 @@ namespace YoloDotNet.Benchmarks.Setup
 
         private static IExecutionProvider GetExecutionProvider(string provider, string model) => provider switch
             {
+                "DML" => new DmlExecutionProvider(),
                 "CPU" => new CpuExecutionProvider(),
                 "GPU" => new CudaExecutionProvider(),
                 "TRT32" => new TensorRtExecutionProvider() // FP32
@@ -82,7 +83,7 @@ namespace YoloDotNet.Benchmarks.Setup
                 {
                     Precision = TrtPrecision.INT8,
                     EngineCachePath = TensorRtConfig.TRT_ENGINE_CACHE_PATH,
-                    Int8CalibrationCacheFile = Path.Join(SharedConfig.AbsoluteAssetsPath, "cache", $"{Path.GetFileNameWithoutExtension(model)}.cache"),
+                    Int8CalibrationCacheFile = Path.Join(SharedConfig.BaseCache, $"{Path.GetFileNameWithoutExtension(model)}.cache"),
                 },
                 _ => throw new ArgumentException("Unknown execution provider")
             };

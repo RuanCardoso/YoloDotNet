@@ -10,6 +10,6 @@ namespace YoloDotNet.Test.Common.Enums
         Street,
         People,
         Crosswalk,
-        Island
+        Island,
     }
 }
