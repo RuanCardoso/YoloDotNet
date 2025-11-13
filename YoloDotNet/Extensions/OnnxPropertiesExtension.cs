@@ -66,7 +66,7 @@ namespace YoloDotNet.Extensions
             })];
         }
 
-        private static string NameOf(dynamic metadata)
+        private static string NameOf(MetaData metadata)
             => metadata.ToString().ToLower();
 
         /// <summary>
