@@ -4,7 +4,9 @@
 
 using SkiaSharp;
 using System.Diagnostics;
+using System.Drawing;
 using System.Globalization;
+using System.Runtime.InteropServices;
 using YoloDotNet;
 using YoloDotNet.Core;
 using YoloDotNet.Enums;
@@ -44,13 +46,18 @@ namespace ObjectDetectionDemo
 		private static string _outputFolder = default!;
 		private static DetectionDrawingOptions? _drawingOptions;
 
+		// get async key state
+		[DllImport("user32.dll")]
+		private static extern bool GetAsyncKeyState(int virtualKey);
+
 		static void Main(string[] args)
 		{
 			_drawingOptions = new DetectionDrawingOptions()
 			{
-				DrawLabels = false,
-				TailThickness = 1f,
-				BorderThickness = 1f
+				DrawLabels = true,
+				DrawConfidenceScore = true,
+				BorderThickness = 2f,
+				BoundingBoxHexColors = new[] { "#FF0000", "#00FF00", "#0000FF" }
 			};
 
 			CreateOutputFolder();
@@ -61,7 +68,7 @@ namespace ObjectDetectionDemo
 			{
 				// Path or byte[] to the ONNX model file. 
 				// SharedConfig.GetTestModelV11 loads a YOLOv11 model.
-				OnnxModel = SharedConfig.GetTestModel("pubg.onnx"),
+				OnnxModel = SharedConfig.GetTestModel("pub_inv_fp16.onnx"),
 
 				// Select execution provider (determines how and where inference is executed).
 				// Available execution providers:
@@ -80,7 +87,7 @@ namespace ObjectDetectionDemo
 				//     Offers significant speed-ups by leveraging TensorRT engine optimizations.
 				//
 				//     See the TensorRTDemo and documentation for detailed configuration and best practices.
-				ExecutionProvider = new CudaExecutionProvider(),
+				ExecutionProvider = new DmlExecutionProvider(),
 
 				// Resize mode applied before inference. Proportional maintains the aspect ratio (adds padding if needed),
 				// while Stretch resizes the image to fit the target size without preserving the aspect ratio.
@@ -97,31 +104,57 @@ namespace ObjectDetectionDemo
 
 			// Load input image as SKBitmap (or SKImage)
 			// The image is sourced from SharedConfig for test/demo purposes.
-			using var image = SKBitmap.Decode(SharedConfig.GetTestImage("inv.jpg"));
 
+			//SKBitmap? image = null;
 			List<ObjectDetection>? results = null;
-			PerfScope.Run("Object Detection", 60, () =>
+			while (true)
 			{
-				// Run object detection inference
-				results = yolo.RunObjectDetection(image, confidence: 0.6, iou: 0.7);
-			});
+				if (GetAsyncKeyState(0x1B))
+					break;
 
-			if (results is null)
-				return;
+				// presss B 
+				if (GetAsyncKeyState(0x42))
+				{
+					using (PerfScope.Create("Object Detection"))
+					{
+						// Run object detection inference
+						// load from path
+						var image = SKBitmap.Decode(@"C:\Users\cardo\OneDrive\Imagens\CVValid\Captura de tela 2025-11-13 023750.png");
+						if (image is null)
+							continue;
 
-			// Draw results
-			image.Draw(results, _drawingOptions);
+						results = yolo.RunObjectDetection(image, confidence: 0.7, iou: 0.7);
+						if (results != null && results.Count > 0)
+						{
+							image.Draw(results, _drawingOptions);
+							var fileName = Path.Combine(_outputFolder, "ObjectDetection.jpg");
+							image.Save(fileName, SKEncodedImageFormat.Jpeg, 80);
+							PrintResults(results);
+							DisplayOutputFolder();
+							break;
+						}
+						// Thread.Sleep(10);
+					}
+				}
+			}
 
-			// If using SKImage, the Draw method returns a new SKBitmap with the drawn results.
-			// Example:
-			// using var resultImage = image.Draw(results, _drawingOptions);
+			// if (results is null || image is null)
+			// 	return;
 
-			// Save image
-			var fileName = Path.Combine(_outputFolder, "ObjectDetection.jpg");
-			image.Save(fileName, SKEncodedImageFormat.Jpeg, 80);
+			// // Draw results
+			// image.Draw(results, _drawingOptions);
 
-			PrintResults(results);
-			DisplayOutputFolder();
+			// // If using SKImage, the Draw method returns a new SKBitmap with the drawn results.
+			// // Example:
+			// // using var resultImage = image.Draw(results, _drawingOptions);
+
+			// // Save image
+			// var fileName = Path.Combine(_outputFolder, "ObjectDetection.jpg");
+			// image.Save(fileName, SKEncodedImageFormat.Jpeg, 80);
+			// image.Dispose();
+
+			// // PrintResults(results);
+			// DisplayOutputFolder();
 		}
 
 		private static void PrintResults(List<ObjectDetection> results)

@@ -5,11 +5,21 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
+    <PublishAot>true</PublishAot>
+    <!-- <PublishSingleFile>true</PublishSingleFile> -->
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\test\YoloDotNet.Test.Common\YoloDotNet.Test.Common.csproj" />
     <ProjectReference Include="..\..\YoloDotNet\YoloDotNet.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="OpenCvSharp4" Version="4.11.0.20250507" />
+    <PackageReference Include="OpenCvSharp4.Extensions" Version="4.11.0.20250507" />
+    <PackageReference Include="ScreenCapture.NET" Version="3.0.0" />
+    <PackageReference Include="ScreenCapture.NET.DX11" Version="3.0.0" />
   </ItemGroup>
 
 </Project>
