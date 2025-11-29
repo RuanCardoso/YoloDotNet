@@ -4,160 +4,174 @@
 
 namespace YoloDotNet.Modules.V8
 {
-    internal class ObjectDetectionModuleV8 : IObjectDetectionModule
-    {
-        private readonly YoloCore _yoloCore;
-        private readonly int _labels;
-        private readonly int _channels;
-        private readonly int _channels2;
-        private readonly int _channels3;
-        private readonly int _channels4;
+	internal class ObjectDetectionModuleV8 : IObjectDetectionModule
+	{
+		private readonly YoloCore _yoloCore;
+		private readonly int _labels;
+		private readonly int _channels;
+		private readonly int _channels2;
+		private readonly int _channels3;
+		private readonly int _channels4;
 
-        public OnnxModel OnnxModel => _yoloCore.OnnxModel;
+		public OnnxModel OnnxModel => _yoloCore.OnnxModel;
 
-        public ObjectDetectionModuleV8(YoloCore yoloCore)
-        {
-            _yoloCore = yoloCore;
+		public ObjectDetectionModuleV8(YoloCore yoloCore)
+		{
+			_yoloCore = yoloCore;
 
-            _labels = _yoloCore.OnnxModel.Labels.Length;
-            _channels = _yoloCore.OnnxModel.Outputs[0].Channels;
-            _channels2 = _channels * 2;
-            _channels3 = _channels * 3;
-            _channels4 = _channels * 4;
-        }
+			_labels = _yoloCore.OnnxModel.Labels.Length;
+			_channels = _yoloCore.OnnxModel.Outputs[0].Channels;
+			_channels2 = _channels * 2;
+			_channels3 = _channels * 3;
+			_channels4 = _channels * 4;
+		}
 
-        public List<ObjectDetection> ProcessImage<T>(T image, double confidence, double pixelConfidence, double iou)
-        {
-            var (ortValues, imageSize) = _yoloCore.Run(image);
-            using IDisposableReadOnlyCollection<OrtValue> _ = ortValues;
+		public List<ObjectDetection> ProcessImage<T>(T image, double confidence, double pixelConfidence, double iou)
+		{
+			var (ortValues, imageSize) = _yoloCore.Run(image);
+			using IDisposableReadOnlyCollection<OrtValue> _ = ortValues;
 
-            var ortSpan = ortValues[0].GetTensorDataAsSpan<float>();
+			var ortSpan = ortValues[0].GetTensorDataAsSpan<float>();
 
-            var results = ObjectDetection(imageSize, ortSpan, confidence, iou)
-                .Select(x => (ObjectDetection)x)
-                .ToList();
+			var results = ObjectDetection(imageSize, ortSpan, confidence, iou)
+				.Select(x => (ObjectDetection)x)
+				.ToList();
 
-            return results;
-        }
+			return results;
+		}
 
-        #region Helper methods
+		#region Helper methods
 
-        /// <summary>
-        /// Detects objects in a tensor and returns a ObjectDetection list.
-        /// </summary>
-        /// <param name="imageSize">The image associated with the tensor data.</param>
-        /// <param name="confidenceThreshold">The confidence threshold for accepting object detections.</param>
-        /// <param name="overlapThreshold">The threshold for overlapping boxes to filter detections.</param>
-        /// <returns>A list of result models representing detected objects.</returns>
-        public ObjectResult[] ObjectDetection(SKSizeI imageSize, ReadOnlySpan<float> ortSpan, double confidenceThreshold, double overlapThreshold)
-        {
-            if (ortSpan == null)
-                return [];
+		/// <summary>
+		/// Detects objects in a tensor and returns a ObjectDetection list.
+		/// </summary>
+		/// <param name="imageSize">The image associated with the tensor data.</param>
+		/// <param name="confidenceThreshold">The confidence threshold for accepting object detections.</param>
+		/// <param name="overlapThreshold">The threshold for overlapping boxes to filter detections.</param>
+		/// <returns>A list of result models representing detected objects.</returns>
+		public ObjectResult[] ObjectDetection(SKSizeI imageSize, ReadOnlySpan<float> ortSpan, double confidenceThreshold, double overlapThreshold)
+		{
+			if (ortSpan == null)
+				return [];
 
-            var (xPad, yPad, xGain, yGain) = _yoloCore.CalculateGain(imageSize);
+			var (xPad, yPad, xGain, yGain) = _yoloCore.CalculateGain(imageSize);
 
-            var width = imageSize.Width;
-            var height = imageSize.Height;
+			var width = imageSize.Width;
+			var height = imageSize.Height;
 
-            int validBoxCount = 0;
-            var boxes = _yoloCore.customSizeObjectResultPool.Rent(_channels);
+			int validBoxCount = 0;
+			var boxes = _yoloCore.customSizeObjectResultPool.Rent(_channels);
 
-            try
-            {
-                for (int i = 0; i < _channels; i++)
-                {
-                    // Move forward to confidence value of first label
-                    var labelOffset = i + _channels4;
+			try
+			{
+				for (int i = 0; i < _channels; i++)
+				{
+					// Move forward to confidence value of first label
+					var labelOffset = i + _channels4;
 
-                    float bestConfidence = 0f;
-                    int bestLabelIndex = -1;
+					float bestConfidence = 0f;
+					int bestLabelIndex = -1;
 
-                    // Get confidence and label for current bounding box
-                    for (var l = 0; l < _labels; l++, labelOffset += _channels)
-                    {
-                        var boxConfidence = ortSpan[labelOffset];
+					// Get confidence and label for current bounding box
+					for (var l = 0; l < _labels; l++, labelOffset += _channels)
+					{
+						var boxConfidence = ortSpan[labelOffset];
 
-                        if (boxConfidence > bestConfidence)
-                        {
-                            bestConfidence = boxConfidence;
-                            bestLabelIndex = l;
-                        }
-                    }
+						if (boxConfidence > bestConfidence)
+						{
+							bestConfidence = boxConfidence;
+							bestLabelIndex = l;
+						}
+					}
 
-                    // Stop early if confidence is low
-                    if (bestConfidence < confidenceThreshold)
-                        continue;
-                        
-                    float x = ortSpan[i];
-                    float y = ortSpan[i + _channels];
-                    float w = ortSpan[i + _channels2];
-                    float h = ortSpan[i + _channels3];
+					// Stop early if confidence is low
+					if (bestConfidence < confidenceThreshold)
+						continue;
 
-                    var (xMin, yMin, xMax, yMax) = (0, 0, 0, 0);
+					float x = ortSpan[i];
+					float y = ortSpan[i + _channels];
+					float w = ortSpan[i + _channels2];
+					float h = ortSpan[i + _channels3];
 
-                    // Bounding box calculations are based on how the input image was resized
-                    // 'Proportional' keeps the original aspect ratio and adds padding around the image
-                    // 'Stretched' scales the image to fill the dimensions, possibly distorting the aspect ratio
-                    if (_yoloCore.YoloOptions.ImageResize == ImageResize.Proportional)
-                    {
-                        var gain = xGain; // Scale factor for proportional resizing
+					var (xMin, yMin, xMax, yMax) = (0, 0, 0, 0);
 
-                        xMin = (int)((x - w / 2 - xPad) * gain);
-                        yMin = (int)((y - h / 2 - yPad) * gain);
-                        xMax = (int)((x + w / 2 - xPad) * gain);
-                        yMax = (int)((y + h / 2 - yPad) * gain);
-                    }
-                    else
-                    {
-                        var halfW = w / 2;
-                        var halfH = h / 2;
+					if (_yoloCore.YoloOptions.ImageResize == ImageResize.None)
+					{
+						// ❗ Modelo retornou coordenadas diretas (sem pad/gain)
+						xMin = (int)(x - w / 2);
+						yMin = (int)(y - h / 2);
+						xMax = (int)(x + w / 2);
+						yMax = (int)(y + h / 2);
 
-                        // Calculate bounding box coordinates adjusted for stretched scaling and padding
-                        // Clamp ensures the coordinates remain within the valid bounds of the image.
-                        xMin = Math.Clamp((int)((x - halfW - xPad) / xGain), 0, width - 1);
-                        yMin = Math.Clamp((int)((y - halfH - yPad) / yGain), 0, height - 1);
-                        xMax = Math.Clamp((int)((x + halfW - xPad) / xGain), 0, width - 1);
-                        yMax = Math.Clamp((int)((y + halfH - yPad) / yGain), 0, height - 1);
-                    }
-                        
-                    // Unscaled coordinates for resized input image
-                    var sxMin = (int)(x - w / 2);
-                    var syMin = (int)(y - h / 2);
-                    var sxMax = (int)(x + w / 2);
-                    var syMax = (int)(y + h / 2);
+						// Apenas clamp final para segurança
+						xMin = Math.Clamp(xMin, 0, width - 1);
+						yMin = Math.Clamp(yMin, 0, height - 1);
+						xMax = Math.Clamp(xMax, 0, width - 1);
+						yMax = Math.Clamp(yMax, 0, height - 1);
+					}
+					// Bounding box calculations are based on how the input image was resized
+					// 'Proportional' keeps the original aspect ratio and adds padding around the image
+					// 'Stretched' scales the image to fill the dimensions, possibly distorting the aspect ratio
+					else if (_yoloCore.YoloOptions.ImageResize == ImageResize.Proportional)
+					{
+						var gain = xGain; // Scale factor for proportional resizing
 
-                    var boundingBox = new SKRectI(xMin, yMin, xMax, yMax);
-                    var boundingBoxUnscaled = new SKRectI(sxMin, syMin, sxMax, syMax);
+						xMin = (int)((x - w / 2 - xPad) * gain);
+						yMin = (int)((y - h / 2 - yPad) * gain);
+						xMax = (int)((x + w / 2 - xPad) * gain);
+						yMax = (int)((y + h / 2 - yPad) * gain);
+					}
+					else
+					{
+						var halfW = w / 2;
+						var halfH = h / 2;
 
-                    boxes[validBoxCount++] = new ObjectResult
-                    {
-                        Label = _yoloCore.OnnxModel.Labels[bestLabelIndex],
-                        Confidence = bestConfidence,
-                        BoundingBox = boundingBox,
-                        BoundingBoxUnscaled = boundingBoxUnscaled,
-                        BoundingBoxIndex = i,
-                        OrientationAngle = _yoloCore.OnnxModel.ModelType == ModelType.ObbDetection ? ortSpan[i + _channels * (4 + _labels)] : 0
-                    };
-                }
+						// Calculate bounding box coordinates adjusted for stretched scaling and padding
+						// Clamp ensures the coordinates remain within the valid bounds of the image.
+						xMin = Math.Clamp((int)((x - halfW - xPad) / xGain), 0, width - 1);
+						yMin = Math.Clamp((int)((y - halfH - yPad) / yGain), 0, height - 1);
+						xMax = Math.Clamp((int)((x + halfW - xPad) / xGain), 0, width - 1);
+						yMax = Math.Clamp((int)((y + halfH - yPad) / yGain), 0, height - 1);
+					}
 
-                // Prevent overhead from temporary collections by copying to a fixed-size array.
-                var resultArray = new ObjectResult[validBoxCount];
-                boxes.AsSpan(0, validBoxCount).CopyTo(resultArray);
+					// Unscaled coordinates for resized input image
+					var sxMin = (int)(x - w / 2);
+					var syMin = (int)(y - h / 2);
+					var sxMax = (int)(x + w / 2);
+					var syMax = (int)(y + h / 2);
 
-                return _yoloCore.RemoveOverlappingBoxes(resultArray, overlapThreshold);
-            }
-            finally
-            {
-                _yoloCore.customSizeObjectResultPool.Return(boxes, clearArray: true);
-            }
-        }
+					var boundingBox = new SKRectI(xMin, yMin, xMax, yMax);
+					var boundingBoxUnscaled = new SKRectI(sxMin, syMin, sxMax, syMax);
 
-        public void Dispose()
-        {
-            _yoloCore?.Dispose();
-            GC.SuppressFinalize(this);
-        }
+					boxes[validBoxCount++] = new ObjectResult
+					{
+						Label = _yoloCore.OnnxModel.Labels[bestLabelIndex],
+						Confidence = bestConfidence,
+						BoundingBox = boundingBox,
+						BoundingBoxUnscaled = boundingBoxUnscaled,
+						BoundingBoxIndex = i,
+						OrientationAngle = _yoloCore.OnnxModel.ModelType == ModelType.ObbDetection ? ortSpan[i + _channels * (4 + _labels)] : 0
+					};
+				}
 
-        #endregion
-    }
+				// Prevent overhead from temporary collections by copying to a fixed-size array.
+				var resultArray = new ObjectResult[validBoxCount];
+				boxes.AsSpan(0, validBoxCount).CopyTo(resultArray);
+
+				return _yoloCore.RemoveOverlappingBoxes(resultArray, overlapThreshold);
+			}
+			finally
+			{
+				_yoloCore.customSizeObjectResultPool.Return(boxes, clearArray: true);
+			}
+		}
+
+		public void Dispose()
+		{
+			_yoloCore?.Dispose();
+			GC.SuppressFinalize(this);
+		}
+
+		#endregion
+	}
 }

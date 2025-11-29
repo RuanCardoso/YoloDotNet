@@ -6,7 +6,8 @@ namespace YoloDotNet.Enums
 {
     public enum ImageResize
     {
-        Proportional,
+		None,
+		Proportional,
         Stretched
     }
 }
