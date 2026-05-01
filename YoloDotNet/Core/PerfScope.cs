@@ -1,6 +1,6 @@
 /// <summary>
 /// Provides a lightweight performance measurement scope that automatically measures 
-/// execution time and calculates the equivalent FPS (frames per second) when disposed.
+/// execution time and calculates smoothed FPS (frames per second) when disposed.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -16,13 +16,18 @@
 /// </code>
 /// <para>
 /// When the scope is disposed, the elapsed time (in milliseconds) and the calculated FPS are 
-/// printed to the console output.
+/// printed to the console output. FPS is smoothed using a rolling average of recent measurements.
 /// </para>
 /// </remarks>
 public sealed class PerfScope : IDisposable
 {
 	private readonly Stopwatch? _watch;
 	private readonly string? _label;
+
+	// Rolling average buffer for FPS smoothing
+	private static readonly Dictionary<string, Queue<double>> _deltaTimes = new();
+	private static readonly int _smoothingFrames = 60; // Average over last 60 frames
+	private static readonly object _lock = new();
 
 	private PerfScope()
 	{
@@ -39,10 +44,10 @@ public sealed class PerfScope : IDisposable
 	/// Creates and starts a new <see cref="PerfScope"/> instance for measuring performance.
 	/// </summary>
 	/// <param name="label">
-	/// Optional descriptive label to include in the console output. Defaults to <c>"Performance"</c>.
+	/// Optional descriptive label to include in the console output. Defaults to <c>"Benchmark"</c>.
 	/// </param>
 	/// <returns>
-	/// A disposable <see cref="PerfScope"/> instance that automatically reports elapsed time and FPS when disposed.
+	/// A disposable <see cref="PerfScope"/> instance that automatically reports elapsed time and smoothed FPS when disposed.
 	/// </returns>
 	/// <example>
 	/// <code>
@@ -104,17 +109,63 @@ public sealed class PerfScope : IDisposable
 	}
 
 	/// <summary>
-	/// Stops the performance timer and reports the elapsed time and calculated FPS to the console.
+	/// Resets the smoothing buffer for a specific label or all labels.
+	/// </summary>
+	/// <param name="label">Label to reset. If null, resets all buffers.</param>
+	public static void ResetSmoothing(string? label = null)
+	{
+		lock (_lock)
+		{
+			if (label == null)
+			{
+				_deltaTimes.Clear();
+			}
+			else if (_deltaTimes.ContainsKey(label))
+			{
+				_deltaTimes[label].Clear();
+			}
+		}
+	}
+
+	/// <summary>
+	/// Stops the performance timer and reports the elapsed time and smoothed FPS to the console.
 	/// </summary>
 	/// <remarks>
 	/// The console output follows the format:
-	/// <c>{Label}: {Milliseconds} ms ({FPS} FPS)</c>
+	/// <c>{Label}: {Milliseconds} ms ({Smoothed FPS} FPS)</c>
+	/// FPS is calculated using a rolling average over the last 60 measurements.
 	/// </remarks>
 	public void Dispose()
 	{
 		_watch!.Stop();
 		double ms = _watch.Elapsed.TotalMilliseconds;
-		double fps = ms > 0 ? 1000.0 / ms : double.PositiveInfinity;
+
+		// Calculate smoothed FPS using rolling average
+		double smoothedFps;
+		double instantFps = ms > 0 ? 1000.0 / ms : double.PositiveInfinity;
+
+		lock (_lock)
+		{
+			string key = _label ?? "Default";
+
+			if (!_deltaTimes.ContainsKey(key))
+			{
+				_deltaTimes[key] = new Queue<double>();
+			}
+
+			var queue = _deltaTimes[key];
+			queue.Enqueue(ms);
+
+			// Keep only last N frames
+			if (queue.Count > _smoothingFrames)
+			{
+				queue.Dequeue();
+			}
+
+			// Calculate average deltaTime
+			double avgMs = queue.Average();
+			smoothedFps = avgMs > 0 ? 1000.0 / avgMs : double.PositiveInfinity;
+		}
 
 		Console.ForegroundColor = ConsoleColor.Yellow;
 		Console.WriteLine();
@@ -123,8 +174,9 @@ public sealed class PerfScope : IDisposable
 		Console.WriteLine("───────────────────────────────────────────────");
 		Console.ResetColor();
 
-		Console.WriteLine($"Elapsed Time : {ms:F2} ms");
-		Console.WriteLine($"FPS Estimate  : {fps:F1} FPS");
+		Console.WriteLine($"Elapsed Time  : {ms:F2} ms");
+		Console.WriteLine($"Instant FPS   : {instantFps:F1} FPS");
+		Console.WriteLine($"Smoothed FPS  : {smoothedFps:F1} FPS (avg of {_deltaTimes[_label ?? "Default"].Count} frames)");
 		Console.WriteLine("───────────────────────────────────────────────");
 		Console.WriteLine();
 	}

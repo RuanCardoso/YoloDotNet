@@ -36,7 +36,9 @@ public static class CaptureManager
             var graphicsCards = _screenCaptureService.GetGraphicsCards();
             var displays = _screenCaptureService.GetDisplays(graphicsCards.First());
             _screenCapture = _screenCaptureService.GetScreenCapture(displays.First());
-            _screenCapture.Timeout = 1000;
+           _screenCapture.Timeout = 0;
+
+            Console.WriteLine(graphicsCards.First().Name);
         }
 
         string zoneKey = $"{region.X}_{region.Y}_{region.Width}_{region.Height}";
@@ -56,17 +58,18 @@ public static class CaptureManager
             catch
             {
                 Console.WriteLine($"Failed to register capture zone: {zoneKey} ):");
-            }
+				return null;
+			}
         }
 
         if (!_screenCapture!.CaptureScreen())
-            return null;
+			return null;
 
         if (captureZone == null)
-            return null;
+			return null;
 
-        // Converte para Mat do OpenCV
-        using (captureZone.Lock())
+		// Converte para Mat do OpenCV
+		using (captureZone.Lock())
         {
             ReadOnlySpan<byte> rawData = captureZone.RawBuffer;
             // Cria bitmap apenas na primeira vez
